@@ -374,3 +374,97 @@ test("RPC timeout aborts a stalled request", async () => {
     }
   }
 });
+
+test("malformed largest-holder response becomes critical missing data", async () => {
+  const realFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes("dexscreener")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          pairs: [
+            makePair({
+              baseAddress: CA,
+              quoteAddress: "QuoteMint",
+            }),
+          ],
+        }),
+      };
+    }
+
+    const { method } = JSON.parse(opts.body);
+
+    if (method === "getTokenLargestAccounts") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ result: { unexpected: true } }),
+      };
+    }
+
+    return fakeFetch(url, opts);
+  };
+
+  try {
+    const report = await analyzeToken(CA, solanaProvider);
+
+    assert.ok(
+      report.criticalDataGaps.includes("Holder data request failed")
+    );
+    assert.equal(report.confidence, "low");
+    assert.equal(report.assessmentStatus, "INSUFFICIENT_DATA");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("invalid holder amounts are rejected instead of crashing analysis", async () => {
+  const realFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes("dexscreener")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          pairs: [
+            makePair({
+              baseAddress: CA,
+              quoteAddress: "QuoteMint",
+            }),
+          ],
+        }),
+      };
+    }
+
+    const { method } = JSON.parse(opts.body);
+
+    if (method === "getTokenLargestAccounts") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          result: {
+            value: [{ address: "TA1", amount: "not-a-number" }],
+          },
+        }),
+      };
+    }
+
+    return fakeFetch(url, opts);
+  };
+
+  try {
+    const report = await analyzeToken(CA, solanaProvider);
+
+    assert.ok(
+      report.criticalDataGaps.includes("Holder data request failed")
+    );
+    assert.equal(report.confidence, "low");
+    assert.equal(report.assessmentStatus, "INSUFFICIENT_DATA");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

@@ -81,43 +81,94 @@ async function getMint(ca) {
 
 async function getHolders(ca, supply) {
   const largest = await rpc("getTokenLargestAccounts", [ca]);
-  const accounts = (largest?.value || []).slice(0, 20);
+
+  if (!largest || !Array.isArray(largest.value)) {
+    throw new Error("Invalid largest-holder RPC response");
+  }
+
+  const accounts = largest.value.slice(0, 20);
+
+  for (const account of accounts) {
+    if (
+      !account ||
+      typeof account.address !== "string" ||
+      !account.address ||
+      typeof account.amount !== "string" ||
+      !/^\d+$/.test(account.amount)
+    ) {
+      throw new Error("Invalid holder account data");
+    }
+  }
+
   if (accounts.length === 0) return [];
 
-  const tokenAccts = await rpc("getMultipleAccounts", [accounts.map((a) => a.address), { encoding: "jsonParsed" }]);
-  const owners = tokenAccts.value.map((v) => v?.data?.parsed?.info?.owner || null);
+  const tokenAccts = await rpc("getMultipleAccounts", [
+    accounts.map((a) => a.address),
+    { encoding: "jsonParsed" },
+  ]);
+
+  if (
+    !tokenAccts ||
+    !Array.isArray(tokenAccts.value) ||
+    tokenAccts.value.length < accounts.length
+  ) {
+    throw new Error("Invalid holder-account details response");
+  }
+
+  const owners = tokenAccts.value.map(
+    (v) => v?.data?.parsed?.info?.owner || null
+  );
 
   const uniqueOwners = [...new Set(owners.filter(Boolean))];
+
   const ownerAccts = uniqueOwners.length
-    ? await rpc("getMultipleAccounts", [uniqueOwners, { encoding: "jsonParsed" }])
+    ? await rpc("getMultipleAccounts", [
+        uniqueOwners,
+        { encoding: "jsonParsed" },
+      ])
     : { value: [] };
 
-  // Keep classification three-valued: wallet, program-owned account, or unknown.
-  // A missing account response is not enough evidence to call a holder a contract.
+  if (
+    !ownerAccts ||
+    !Array.isArray(ownerAccts.value) ||
+    ownerAccts.value.length < uniqueOwners.length
+  ) {
+    throw new Error("Invalid owner-account details response");
+  }
+
+  // Unknown owner information must remain unknown.
   const isWallet = new Map(
     uniqueOwners.map((owner, i) => {
-      const account = ownerAccts.value?.[i];
-      if (!account) return [owner, null];
+      const account = ownerAccts.value[i];
+
+      if (!account || typeof account.owner !== "string") {
+        return [owner, null];
+      }
+
       return [owner, account.owner === SYSTEM_PROGRAM];
     })
   );
 
   const byOwner = new Map();
-  accounts.forEach((a, i) => {
-    const owner = owners[i] || a.address;
-    byOwner.set(owner, (byOwner.get(owner) || 0n) + BigInt(a.amount));
+
+  accounts.forEach((account, i) => {
+    const owner = owners[i] || account.address;
+    const amount = BigInt(account.amount);
+
+    byOwner.set(owner, (byOwner.get(owner) || 0n) + amount);
   });
 
   return [...byOwner.entries()]
-    .map(([address, amt]) => {
+    .map(([address, amount]) => {
       const walletStatus = isWallet.get(address);
+
       return {
         address,
-        pct: pctOf(amt, supply),
-        // null means classification could not be established from available RPC data.
-        isContract: walletStatus === null || walletStatus === undefined
-          ? null
-          : !walletStatus,
+        pct: pctOf(amount, supply),
+        isContract:
+          walletStatus === null || walletStatus === undefined
+            ? null
+            : !walletStatus,
       };
     })
     .sort((a, b) => b.pct - a.pct);
