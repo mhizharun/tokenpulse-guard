@@ -311,8 +311,26 @@ export const solanaProvider = {
   async getTokenData(contractAddress) {
     if (!BASE58.test(contractAddress)) return null;
 
-    const mint = await getMint(contractAddress);
-    if (!mint) return null;
+    let mint;
+    try {
+      mint = await getMint(contractAddress);
+    } catch {
+      // Without valid mint data, do not produce a risk assessment.
+      return null;
+    }
+
+    if (
+      !mint ||
+      typeof mint.supply !== "string" ||
+      !/^\d+$/.test(mint.supply) ||
+      !Number.isInteger(mint.decimals) ||
+      mint.decimals < 0 ||
+      !(mint.mintAuthority === null || typeof mint.mintAuthority === "string") ||
+      !(mint.freezeAuthority === null || typeof mint.freezeAuthority === "string")
+    ) {
+      return null;
+    }
+
     const supply = BigInt(mint.supply);
 
     const [holdersR, marketR, creatorR] = await Promise.allSettled([

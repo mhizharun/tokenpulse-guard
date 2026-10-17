@@ -309,7 +309,7 @@ test("failed holder RPC is treated as critical missing data", async () => {
   }
 });
 
-test("malformed RPC response is rejected", async () => {
+test("malformed RPC response fails safely", async () => {
   const realFetch = globalThis.fetch;
 
   globalThis.fetch = async (url) => {
@@ -329,16 +329,13 @@ test("malformed RPC response is rejected", async () => {
   };
 
   try {
-    await assert.rejects(
-      solanaProvider.getTokenData(CA),
-      /response is missing result/
-    );
+    assert.equal(await solanaProvider.getTokenData(CA), null);
   } finally {
     globalThis.fetch = realFetch;
   }
 });
 
-test("RPC timeout aborts a stalled request", async () => {
+test("RPC timeout fails safely", async () => {
   const realFetch = globalThis.fetch;
   const previousTimeout = process.env.SOLANA_RPC_TIMEOUT_MS;
 
@@ -360,10 +357,7 @@ test("RPC timeout aborts a stalled request", async () => {
   };
 
   try {
-    await assert.rejects(
-      solanaProvider.getTokenData(CA),
-      /timed out after 25ms/
-    );
+    assert.equal(await solanaProvider.getTokenData(CA), null);
   } finally {
     globalThis.fetch = realFetch;
 
