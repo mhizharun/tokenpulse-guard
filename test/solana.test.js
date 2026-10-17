@@ -308,3 +308,69 @@ test("failed holder RPC is treated as critical missing data", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+test("malformed RPC response is rejected", async () => {
+  const realFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("dexscreener")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ pairs: [] }),
+      };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ jsonrpc: "2.0", id: 1 }),
+    };
+  };
+
+  try {
+    await assert.rejects(
+      solanaProvider.getTokenData(CA),
+      /response is missing result/
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("RPC timeout aborts a stalled request", async () => {
+  const realFetch = globalThis.fetch;
+  const previousTimeout = process.env.SOLANA_RPC_TIMEOUT_MS;
+
+  process.env.SOLANA_RPC_TIMEOUT_MS = "25";
+
+  globalThis.fetch = async (_url, opts) => {
+    return new Promise((resolve, reject) => {
+      if (opts.signal.aborted) {
+        reject(new Error("Request aborted"));
+        return;
+      }
+
+      opts.signal.addEventListener(
+        "abort",
+        () => reject(new Error("Request aborted")),
+        { once: true }
+      );
+    });
+  };
+
+  try {
+    await assert.rejects(
+      solanaProvider.getTokenData(CA),
+      /timed out after 25ms/
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+
+    if (previousTimeout === undefined) {
+      delete process.env.SOLANA_RPC_TIMEOUT_MS;
+    } else {
+      process.env.SOLANA_RPC_TIMEOUT_MS = previousTimeout;
+    }
+  }
+});

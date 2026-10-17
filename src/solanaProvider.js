@@ -5,15 +5,66 @@ const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const MAX_SIGNATURE_PAGES = 3;
 
 async function rpc(method, params) {
-  const res = await fetch(config.solanaRpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`RPC ${method} failed (HTTP ${res.status})`);
-  const json = await res.json();
-  if (json.error) throw new Error(`RPC ${method}: ${json.error.message}`);
-  return json.result;
+  const timeoutMs = Math.max(
+    1,
+    Number(process.env.SOLANA_RPC_TIMEOUT_MS) || 10_000
+  );
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    let res;
+
+    try {
+      res = await fetch(config.solanaRpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method,
+          params,
+        }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(`RPC ${method} timed out after ${timeoutMs}ms`);
+      }
+      throw error;
+    }
+
+    if (!res.ok) {
+      throw new Error(`RPC ${method} failed (HTTP ${res.status})`);
+    }
+
+    let json;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`RPC ${method} returned invalid JSON`);
+    }
+
+    if (!json || typeof json !== "object" || Array.isArray(json)) {
+      throw new Error(`RPC ${method} returned an invalid response`);
+    }
+
+    if (json.error) {
+      const message =
+        typeof json.error.message === "string"
+          ? json.error.message
+          : "Unknown RPC error";
+      throw new Error(`RPC ${method}: ${message}`);
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(json, "result")) {
+      throw new Error(`RPC ${method} response is missing result`);
+    }
+
+    return json.result;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function pctOf(amount, supply) {
