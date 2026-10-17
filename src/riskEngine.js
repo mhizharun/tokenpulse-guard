@@ -163,7 +163,14 @@ function analyzeDev(t) {
 function analyzeHolders(t) {
   const holders = Array.isArray(t.holders) ? t.holders : [];
   const gaps = [];
+  const criticalGaps = [];
   const flags = [];
+
+  if (t.holdersDataAvailable === false) {
+    const message = "Holder data request failed";
+    gaps.push(message);
+    criticalGaps.push(message);
+  }
 
   const unknownClassification = holders.some(
     (h) => h.isContract === null || h.isContract === undefined
@@ -185,7 +192,7 @@ function analyzeHolders(t) {
       score: 0,
       flags,
       gaps: [...new Set(gaps)],
-      criticalGaps: [],
+      criticalGaps: [...new Set(criticalGaps)],
     };
   }
 
@@ -217,7 +224,7 @@ function analyzeHolders(t) {
     score: Math.min(score, 20),
     flags,
     gaps: [...new Set(gaps)],
-    criticalGaps: [],
+    criticalGaps: [...new Set(criticalGaps)],
     metrics: {
       top1,
       top5: Number(top5.toFixed(1)),

@@ -263,7 +263,10 @@ export const solanaProvider = {
       mintRenounced: mint.mintAuthority === null,
       freezeAuthorityActive: mint.freezeAuthority !== null,
       honeypot: null,
-      dev, holders, whales,
+      dev,
+      holders,
+      holdersDataAvailable: holdersR.status === "fulfilled",
+      whales,
     };
   },
 };
