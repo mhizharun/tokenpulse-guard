@@ -1,0 +1,13 @@
+{
+  "name": "tokenpulse-guard",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "demo": "node src/demo.js",
+    "server": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "analyze": "node src/cli.js",
+    "guard": "node src/guard-cli.js"
+  },
+  "engines": { "node": ">=18" }
+}
